@@ -1,0 +1,687 @@
+---
+title: "Black_Friday_Sales_Prediction"
+output: html_document
+date: "Summer 2023"
+---
+
+```{r}
+install.packages("corrplot",repos = "http://cran.us.r-project.org")
+install.packages("glmnet",repos = "http://cran.us.r-project.org")
+install.packages("splitTools",repos = "http://cran.us.r-project.org")
+install.packages("MASS",repos = "http://cran.us.r-project.org")
+install.packages("tidymodels",repos = "http://cran.us.r-project.org")
+install.packages("plotly",repos = "http://cran.us.r-project.org")
+
+library(glmnet)
+library(ISLR2)
+library(ggplot2)
+library(GGally)
+library(reshape2)
+library(dplyr)
+library(tidyverse)
+library(caret)
+library(corrplot)
+library(splitTools)
+library(MASS)
+library(tidymodels)
+library(tidyr)
+library(plotly)
+library(rpart)
+
+```
+
+```{r}
+
+bf_sales <- read.csv("train.csv")
+head(bf_sales)
+
+```
+
+```{r}
+
+summary(bf_sales)
+
+```
+
+The dataset contains only categorical columns and hence we would need to encode it for regression later on before feeding it into the model.
+
+Identifying the Null values in the data as the summary stats showed a lot of null values
+
+```{r}
+
+colSums(is.na(bf_sales))
+
+```
+
+There are \~30% nulls in product category 2 nd 70% nulls in product category 3. So we will be eliminating product category 3 as treating it after 70% missing data is not going to be useful.
+
+```{r}
+
+bf_sales <- subset(bf_sales, select = -c(Product_Category_3, Product_Category_2))
+head(bf_sales)
+```
+
+## EDA
+
+We will do some basic EDA to understand the data and the data distribution.
+
+to start with, let us understand the demographic distribution of our data.
+
+```{r}
+# 1. Get the purchase amount by Gender, age, occupation, city, stay, marital status and product categories and product sub categories
+# 2. Get the purchase amount by gender/age/occupation (if applicable)/marital status (if applicable) to get an idea of what the demography is and how much they are willing to spend
+# 3. Get ranges of purchase amounts from the above findings
+# Do further analysis on high spent categories vs low spend categories
+
+
+# Creating a copy of the data for future use if needed 
+
+bf_sales_copy <- bf_sales
+```
+
+1)  Gender vs Purchase amount
+
+```{r}
+
+# Grouping the data by gender
+gender_data <- bf_sales %>% group_by(Gender) %>% summarise(total_purchase = mean(Purchase))
+text <- c('8.7k', '9.4k')
+
+
+#fig <- plot_ly(data = gender_data,
+#  x = gender_data$Gender,
+#  y = gender_data$total_purchase,
+#  text = text,
+#  type = "bar",
+#  color = 'orange')
+#
+#fig <- fig %>% layout(title = "Gender vs Avg Purchase Amount",
+#         xaxis = list(title = "Gender"),
+#         text = text,
+#         yaxis = list(title = "Avg Purchase Amount"))
+#
+#fig
+
+# Plotting a bar graph of the above
+
+barplot(height = gender_data$total_purchase, names = gender_data$Gender, main = "Gender vs Avg Purchase", ylab = "Purchase Amount", xlab = "Gender", col ="#f6a192", width = 4)
+
+```
+
+From the above graph, we can see that there is a similar pattern in the average purchase amount for both the genders. But males still have a higher average.
+
+2)  Age vs Purchase amount
+
+```{r}
+
+# Grouping the data by gender
+
+age_data <- bf_sales %>% group_by(Age) %>% summarise(total_purchase = mean(Purchase))
+
+# Plotting a bar graph of the above
+
+barplot(height = age_data$total_purchase, names = age_data$Age, main = "Age vs Purchase", ylab = "Purchase Amount", xlab = "Age", col ="#f6a192")
+
+```
+
+From here, we can notice that the age gap doesnt have much of a significance on purchase amount.
+
+3)  Occupation vs Purchase amount
+
+```{r}
+
+# Grouping the data by gender
+
+occupation_data <- bf_sales %>% group_by(Occupation) %>% summarise(total_purchase = mean(Purchase))
+
+# Plotting a bar graph of the above
+
+barplot(height = occupation_data$total_purchase, names = occupation_data$Occupation, main = "Occupation vs Purchase", ylab = "Purchase Amount", xlab = "Occupation", col ="#f6a192")
+
+```
+
+There are certain occupations that spend slightly more on the purchase than the rest. But the difference is still insignificant.
+
+4)  City vs Purchase amount
+
+```{r}
+
+# Grouping the data by gender
+
+city_data <- bf_sales %>% group_by(City_Category) %>% summarise(total_purchase = mean(Purchase))
+
+# Plotting a bar graph of the above
+
+barplot(height = city_data$total_purchase, names = city_data$City_Category, main = "City vs Purchase", ylab = "Purchase Amount", xlab = "City", col ="#f6a192")
+
+```
+
+On an average, City C spends a lot on products compared to City A and B.
+
+5)  Stay vs Purchase amount
+
+```{r}
+
+# Grouping the data by gender
+
+Stay_data <- bf_sales %>% group_by(Stay_In_Current_City_Years) %>% summarise(total_purchase = mean(Purchase))
+
+# Plotting a bar graph of the above
+
+barplot(height = Stay_data$total_purchase, names = Stay_data$Stay_In_Current_City_Years, main = "Stay vs Purchase", ylab = "Purchase Amount", xlab = "Stay", col ="#f6a192")
+
+```
+
+6)  Marital Status vs Purchase amount
+
+```{r}
+
+# Grouping the data by marital status
+
+marital_data <- bf_sales %>% group_by(Marital_Status) %>% summarise(total_purchase = mean(Purchase))
+
+# Plotting a bar graph of the above
+
+barplot(height = marital_data$total_purchase, names = marital_data$Marital_Status, main = "Marital Status vs Purchase", ylab = "Purchase Amount", xlab = "Marital Status", col ="#f6a192")
+
+```
+
+Stay and Marital status don't affect the purchase amount.
+
+7)  P1 vs Purchase amount
+
+```{r}
+
+# Grouping the data by marital status
+
+P1_data <- bf_sales %>% group_by(Product_Category_1) %>% summarise(total_purchase = mean(Purchase))
+
+# Plotting a bar graph of the above
+
+barplot(height = P1_data$total_purchase, names = P1_data$Product_Category_1, main = "P1 vs Purchase", ylab = "Purchase Amount", xlab = "P1", col ="#f6a192")
+
+```
+
+Products in the category 10, 7, 6 and 9 have a higher spend than the rest of the categories.
+
+```{r}
+
+str(bf_sales)
+
+```
+
+```{r}
+
+bf_sales$Age <- as.character(bf_sales$Age)
+bf_sales$Occupation <- as.character((bf_sales$Occupation))
+bf_sales$Marital_Status <- as.character(bf_sales$Marital_Status)
+bf_sales$Product_Category_1 <- as.character(bf_sales$Product_Category_1)
+
+```
+
+## Performing correlation on dataset
+
+```{r}
+
+# Implementing label encoder
+
+bf_sales$Product_ID_en <- as.numeric(factor(bf_sales$Product_ID))
+bf_sales$Gender_en <- as.numeric(factor(bf_sales$Gender))
+bf_sales$Age_en <- as.numeric(factor(bf_sales$Age))
+bf_sales$Occupation_en <- as.numeric(factor(bf_sales$Occupation))
+bf_sales$City_Category_en <- as.numeric(factor(bf_sales$City_Category))
+bf_sales$Stay_In_Current_City_Years_en <- as.numeric(factor(bf_sales$Stay_In_Current_City_Years))
+bf_sales$Marital_Status_en <- as.numeric(factor(bf_sales$Marital_Status))
+bf_sales$Product_Category_1_en <- as.numeric(factor(bf_sales$Product_Category_1))
+
+```
+
+```{r}
+
+bf_sales_encode <- subset(bf_sales, select=c("Product_ID_en", "Gender_en", "Age_en", "Occupation_en", "City_Category_en", "Stay_In_Current_City_Years_en",  "Marital_Status_en", "Product_Category_1_en", "Purchase"))
+
+```
+
+```{r}
+
+bf_sales_encode.cor <- cor(bf_sales_encode)
+corrplot(bf_sales_encode.cor)
+
+```
+
+## Splitting the data into train and test
+
+```{r}
+
+set.seed(3451)
+inds <- partition(bf_sales_encode$Purchase, p = c(train = 0.7, valid = 0.2, test = 0.1))
+train <- bf_sales_encode[inds$train, ]
+valid <- bf_sales_encode[inds$valid, ]
+test <- bf_sales_encode[inds$test, ]
+
+# Standardizing the data
+
+train_std <- train %>% mutate_all(~(scale(.) %>% as.vector))
+valid_std <- valid %>% mutate_all(~(scale(.) %>% as.vector))
+test_std <- test %>% mutate_all(~(scale(.) %>% as.vector))
+
+```
+
+```{r}
+
+# Lasso Feature Selection
+
+x <- data.matrix(train_std[, c("Product_ID_en", "Gender_en", "Age_en", "Occupation_en", "City_Category_en", "Stay_In_Current_City_Years_en",  "Marital_Status_en", "Product_Category_1_en")])
+
+y <- train_std$Purchase
+
+# Perform k-fold cross-validation to find optimal lambda value
+
+cv_model <- cv.glmnet(x, y, alpha = 1)
+
+# Find optimal lambda value that minimizes test MSE
+
+best_lambda <- cv_model$lambda.min
+
+# Produce plot of test MSE by lambda value
+
+plot(cv_model) 
+
+best_model <- glmnet(x, y, alpha = 1, lambda = best_lambda)
+coef(best_model)
+
+```
+
+## DECISION TREE
+
+```{r}
+
+# Decision tree model
+
+validation_set <- subset(valid[, c("Product_ID_en", "Gender_en", "Age_en", "Occupation_en", "City_Category_en", "Stay_In_Current_City_Years_en",  "Marital_Status_en", "Product_Category_1_en")])
+
+cv_tree <- rpart(Purchase ~ ., data = train)
+val_preds <- predict(cv_tree, newdata = validation_set)
+
+pred_table <- data.frame(matrix(unlist(val_preds), nrow=length(val_preds), byrow=TRUE))
+pred_table$val_real <- valid$Purchase
+colnames(pred_table) <- c('val_preds', 'val_real')
+pred_table$val_real <- as.integer(pred_table$val_real)
+pred_table$val_preds <- as.integer(pred_table$val_preds)
+
+# Test data
+
+test_set <- subset(test[, c("Product_ID_en", "Gender_en", "Age_en", "Occupation_en", "City_Category_en", "Stay_In_Current_City_Years_en",  "Marital_Status_en", "Product_Category_1_en")])
+
+test_preds <- predict(cv_tree, newdata = test_set)
+
+pred_table <- data.frame(matrix(unlist(test_preds), nrow=length(test_preds), byrow=TRUE))
+pred_table$test_real <- test$Purchase
+colnames(pred_table) <- c('test_preds', 'test_real')
+pred_table$test_real <- as.integer(pred_table$test_real)
+pred_table$test_preds <- as.integer(pred_table$test_preds)
+
+
+# Calculate RMSE and r-squared
+
+rmse <- sqrt(mean((pred_table$test_real - pred_table$test_preds)^2))
+r_sq <- {cor(pred_table$test_real,pred_table$test_preds)^2}
+
+print(rmse)
+print(r_sq)
+
+```
+
+No parameters were given in the above snippet indicating that the model ran with the default parameters.
+
+```{r}
+# Cross validation for decision tree
+
+cv_tree <- rpart(Purchase ~ ., maxdepth = 5, minbucket = 5, method = "anova", data = train)
+options(repr.plot.width = 6, repr.plot.height = 6)
+```
+
+```{r}
+
+valid_preds <- predict(cv_tree, newdata = valid) 
+
+rmse <- sqrt(mean((pred_table$test_real - valid_preds)^2))
+
+print(rmse)
+
+```
+
+Cross validation did not improve the output of the model. Hence earlier model was considered for comparison.
+
+```{r}
+
+
+
+```
+
+## BAGGING & RANDOM FOREST
+
+```{r}
+
+rm(list = ls())
+
+library(dplyr)      # For data manipulation
+library(ggplot2)    # For data visualization
+library(scales)     # For formatting numeric values
+library(psych)
+library(tree)
+library(randomForest)
+
+saledata<-read.csv("Black_Friday_Clean_Data.csv",stringsAsFactors = FALSE)
+
+View(saledata)
+dim(saledata)
+saledata <- na.omit(saledata)
+dim(saledata)
+
+df<-data.frame(saledata)
+df1<-subset(df,select = -c(Product_Category_2,User_ID))
+df1
+View(df)
+View(df1)
+range(Purchase)
+
+summary.data.frame(df1)
+str(df1)
+
+# Histogram of purchase amount
+ggplot(df1, aes(x = Purchase)) +
+  geom_histogram(binwidth = 500, fill = "steelblue", color = "white") +
+  labs(x = "Purchase Amount", y = "Count") +
+  scale_x_continuous(labels = comma)
+
+# Box plot: Purchase amount by gender
+ggplot(df1, aes(x = Gender, y = Purchase, fill = Gender)) +
+  geom_boxplot() +
+  labs(x = "Gender", y = "Purchase Amount") +
+  scale_y_continuous(labels = comma)
+
+table(Gender)   # Gives count of males and females
+
+# Box plot: Purchase amount by product category1
+ggplot(df1, aes(x = Purchase, fill = Purchase)) +
+  geom_boxplot() +
+  labs(x = "Purchase", y = "Amount") +
+  scale_y_continuous(labels = comma)
+
+
+# Marital status of Customer : Count of Married and Unmarried - Unmarried more than married
+Marital_Status <- factor(Marital_Status,levels = c(0,1),
+                         labels = c("UNMARRIED","MARRIED"))
+
+plot(Marital_Status,ylim=c(0,330000),main="COUNT OF MARTIAL STATUS",
+     col="lightblue")
+
+g2<-ggplot(df1,aes(x=Marital_Status,y=Purchase))+
+  geom_boxplot(col="tan2",size=1)+
+  labs(title="BOXPLOT",subtitle="PURCHASE AMOUNT VS MARITAL STATUS",
+       y="PURCHASE AMOUNT")
+plot(g2)
+
+# Age Vs Purchase: Age 26-35 spends more than all other age groups
+g1<-ggplot(saledata,aes(x=Age))+geom_bar(size=2,col="steelblue2")+
+  labs(y="PURCHASE AMOUNT")
+plot(g1)
+
+# Age Vs Purchase------Gender filter 
+g4<-ggplot(df1, aes(x=Age, y=Purchase)) + geom_col(aes(col=Gender),
+                                                        size=2,width = 0.8)
+plot(g4)
+
+# Purchase Amount Vs Stay In Current City Years----Customer living in current city from 1-2 years shop more than other customers.
+g3<-ggplot(df1,aes(x=Stay_In_Current_City_Years))+
+  geom_bar(size=2,col="steelblue1")+
+  labs(y="PURCHASE AMOUNT")
+plot(g3)
+
+# Product category most sold : 14 
+product_category_counts <- df1 %>% 
+  count(Product_Category_1, name = "Count") %>%
+  mutate(Total = Product_Category_1) %>%
+  top_n(10, Total)
+
+ggplot(product_category_counts, aes(x = reorder(Product_Category_1, Total), y = Total)) +
+  geom_bar(stat = "identity", fill = "green") +
+  labs(x = "Product Category", y = "Count") +
+  scale_y_continuous(labels = comma)
+
+
+round(cor(Filter(is.numeric, df1)),2)
+library(corrplot)
+
+# Assuming 'saledata' is your data frame
+
+numeric_data <- Filter(is.numeric, df1)
+correlation_matrix <- cor(numeric_data)
+
+# Plot the correlation matrix as a heat map
+
+corrplot(correlation_matrix, method = "color", type = "upper", tl.cex = 0.7)
+
+# create a training set, and fit the tree to the training data.
+
+set.seed(1)
+train <- sample(1:nrow(df1), nrow(df1) / 2)
+tree.df1 <- tree(Purchase~., df1, subset = train)
+summary(tree.df1)
+
+plot(tree.df1)
+text(tree.df1, pretty = 0)
+
+cv.df <- cv.tree(tree.df1)
+plot(cv.df$size, cv.df$dev, type = "b")
+
+prune.df <- prune.tree(tree.df1, best = 5)
+plot(prune.df)
+text(prune.df, pretty = 0)
+
+yhat <- predict(tree.df1, newdata = df1[-train, ])
+df.test <- df1[-train, "Purchase"]
+plot(yhat, df.test)
+abline(0, 1)
+sqrt(mean((yhat - df.test)^2)) #RMSE=3100.823
+
+library(randomForest)
+set.seed(1)
+bag.df <- randomForest(Purchase~.,data = df1,subset = train, mtry = 1, ntree= 10,importance = TRUE)
+bag.df
+yhat.bag <- predict(bag.df, newdata = df1[-train, ])
+sqrt(mean((yhat.bag - df.test)^2)) #RMSE= 4230.191
+
+set.seed(1)
+bag.df <- randomForest(Purchase~.,data = df1,subset = train, mtry = 2, ntree= 5,importance = TRUE)
+bag.df
+yhat.bag <- predict(bag.df, newdata = df1[-train, ])
+sqrt(mean((yhat.bag - df.test)^2)) #RMSE = 3336.008
+
+set.seed(1)
+bag.df <- randomForest(Purchase~.,data = df1,subset = train, mtry = 3, ntree= 5,importance = TRUE)
+bag.df
+yhat.bag <- predict(bag.df, newdata = df1[-train, ])
+View(yhat.bag)
+
+
+sqrt(mean((yhat.bag - df.test)^2)) #RMSE = 3051.248
+mean((yhat.bag - df.test)^2)  #MSE = 9310117
+
+# r-square for Bagging
+y_actual1 <- df1$Purchase[-train]
+y_mean <- mean(y_actual1)
+ss_total <- sum((y_actual1 - y_mean)^2)
+ss_residual <- sum((y_actual1 - yhat.bag)^2)
+r_squared <- 1 - (ss_residual / ss_total)
+
+r_squared  #0.63
+
+set.seed(1)
+rf.df <- randomForest(Purchase~., data = df1,subset = train, mtry =3,ntree=5, importance = TRUE)
+yhat.rf <- predict(rf.df, newdata = df1[-train, ])
+sqrt(mean((yhat.rf - df.test)^2)) #RMSE = 3051.248
+mean((yhat.rf - df.test)^2)  #MSE=9310117
+
+importance(rf.df)
+varImpPlot(rf.df)
+
+set.seed(1)
+rf.df <- randomForest(Purchase~., data = df1,subset = train, mtry =3,ntree=6, importance = TRUE)
+yhat.rf <- predict(rf.df, newdata = df1[-train, ])
+sqrt(mean((yhat.rf - df.test)^2)) #RMSE = 3015.27
+mean((yhat.rf - df.test)^2)  #MSE= 9091853
+
+set.seed(1)
+rf.df <- randomForest(Purchase~., data = df1,subset = train, mtry =3,ntree=8, importance = TRUE)
+yhat.rf <- predict(rf.df, newdata = df1[-train, ])
+sqrt(mean((yhat.rf - df.test)^2)) #RMSE = 2981.795
+mean((yhat.rf - df.test)^2)  #MSE= 8891103
+
+# r-square for Random Forest
+y_actual <- df1$Purchase[-train]
+y_mean <- mean(y_actual)
+ss_total <- sum((y_actual - y_mean)^2)
+ss_residual <- sum((y_actual - yhat.rf)^2)
+r_squared <- 1 - (ss_residual / ss_total)
+
+r_squared    #0.66
+
+
+```
+
+```{r}
+
+
+
+```
+
+## BOOSTING
+
+```{r}
+
+library(tidyverse)
+library(CatEncoders)
+library(xgboost)
+library(caret)
+library(randomForest)
+
+df <- read.csv("Black_Friday_Clean_Data.csv")
+print(head(df,5))
+
+# Encoding
+
+# Product ID
+labs = LabelEncoder.fit(df$Product_ID)
+df$Product_ID = transform(labs, df$Product_ID)
+print(head(df,5))
+
+# Gender
+labs = LabelEncoder.fit(df$Gender)
+df$Gender = transform(labs, df$Gender)
+print(head(df,5))
+
+# Age
+labs = LabelEncoder.fit(df$Age)
+df$Age = transform(labs, df$Age)
+print(head(df,5))
+
+# City Category
+labs = LabelEncoder.fit(df$City_Category)
+df$City_Category = transform(labs, df$City_Category)
+print(head(df,5))
+
+# Stay in Current City years
+labs = LabelEncoder.fit(df$Stay_In_Current_City_Years)
+df$Stay_In_Current_City_Years = transform(labs, df$Stay_In_Current_City_Years)
+print(head(df,5))
+
+# Dropping User_ID
+df <- subset(df, select = -User_ID)
+df <- subset(df, select = -Product_Category_2)
+
+
+# Split the data into train, validation, and test sets
+set.seed(123)  # For reproducibility
+temp_index <- createDataPartition(df$Purchase, times = 1, p = 0.9, list = FALSE)
+temp_data <- df[temp_index, ]
+test_data <- df[-temp_index, ]
+valid_index <- createDataPartition(temp_data$Purchase, times = 1, p = 0.23, list = FALSE)
+valid_data <- temp_data[valid_index, ]
+train_data <- temp_data[-valid_index, ]
+#test_data <- temp_data[-valid_index, ]
+#valid_index <- createDataPartition(temp_data$Purchase, times = 1, p = 0.1, list = FALSE)
+#valid_data <- temp_data[valid_index, ]
+
+
+# Convert data to DMatrix format (a special data structure used by xgboost)
+dtrain <- xgb.DMatrix(data = as.matrix(train_data[, 1:8]), label = train_data$Purchase)
+dvalid <- xgb.DMatrix(data = as.matrix(valid_data[, 1:8]), label = valid_data$Purchase)
+dtest <- xgb.DMatrix(data = as.matrix(test_data[, 1:8]))
+
+# Train the XGBoost model with the given parameters
+params <- list(
+  objective = "reg:linear", # For regression tasks
+  eval_metric = "rmse",     # Root Mean Squared Error as evaluation metric
+  max.depth = 8,
+  nrounds = 1000,            # Number of boosting rounds (you can adjust this)
+  eta = 0.1                 # Learning rate (you can adjust this)
+)
+model <- xgboost(data = dtrain, params = params, nrounds = params$nrounds)
+
+# Perform cross-validation using the validation dataset
+cv_results <- xgb.cv(data = dvalid, params = params, nfold = 10, nrounds = 1000)
+
+# Get the best number of boosting rounds from cross-validation
+# best_nrounds <- which.min(cv_results$test_rmse_mean)
+
+# Re-train the model with the best number of boosting rounds
+# model <- xgboost(data = dtrain, params = params, nrounds = best_nrounds)
+
+# Make predictions on the test set
+predictions <- predict(model, newdata = dtest)
+sqrt(mean((predictions-test_data$Purchase)^2))
+print(xgb.importance(model = model))
+(cor(test_data$Purchase,predictions)^2)
+mean((predictions-test_data$Purchase)^2)
+sum(predictions)
+sum(test_data$Purchase)
+
+# Make predictions on the validation set
+predictions_valid <- predict(model, newdata = dvalid)
+sqrt(mean((predictions_valid-valid_data$Purchase)^2))
+print(xgb.importance(model = model))
+(cor(test_data$Purchase,predictions_valid)^2)
+mean((predictions_valid-valid_data$Purchase)^2)
+
+
+# Load the necessary packages
+# install.packages("ggplot2")
+library(ggplot2)
+
+# Create a data frame combining actual and predicted prices
+plot_data <- data.frame(Index = 1:75,Actual = head(test_data$Purchase,75), Predicted = head(predictions,75))
+write.csv(plot_data,"test_preds.csv")
+
+# Create the scatter plot
+library(ggplot2)
+plot_data <- data.frame(Actual = head(test_data$Purchase,75), Predicted = head(predictions,75))
+ggplot(plot_data, aes(x = Actual, y = Predicted)) +
+  geom_point(color = "blue") +             # Plot points in blue
+  geom_abline(intercept = 0, slope = 1) +   # Add 45-degree reference line
+  labs(title = "Predictions vs. Actual Prices",
+       x = "Actual Prices",
+       y = "Predicted Prices")
+
+
+ggplot(plot_data, aes(x = Index)) +
+  geom_line(aes(y = Actual, color = "Actual"), size = 1) +
+  geom_line(aes(y = Predicted, color = "Predicted"), size = 1, linetype = "dashed") +
+  labs(title = "Actual vs. Predicted Purchase Prices",
+       x = "Observation Index",
+       y = "Purchase Price") +
+  scale_color_manual(values = c("Actual" = "blue", "Predicted" = "red")) +
+  theme_minimal()x``
+
+```
